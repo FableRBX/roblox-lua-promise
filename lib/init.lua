@@ -667,7 +667,11 @@ function Promise.is(object)
 	elseif objectMetatable == nil then
 		-- No metatable, but we should still chain onto tables with andThen methods
 		return type(object.andThen) == "function"
-	elseif type(objectMetatable) == "table" and type(rawget(objectMetatable, "andThen")) == "function" then
+	elseif
+		type(objectMetatable) == "table"
+		and type(rawget(objectMetatable, "__index")) == "table"
+		and type(rawget(rawget(objectMetatable, "__index"), "andThen")) == "function"
+	then
 		-- Maybe this came from a different or older Promise library.
 		return true
 	end
@@ -715,7 +719,9 @@ do
 			if connection == nil then -- first is nil when connection is nil
 				first = node
 				connection = Promise._timeEvent:Connect(function()
-					while first.endTime <= Promise._getTime() do
+					local threadStart = Promise._getTime()
+
+					while first ~= nil and first.endTime < threadStart do
 						local current = first
 						first = current.next
 
@@ -727,7 +733,6 @@ do
 						end
 
 						current.resolve(Promise._getTime() - current.startTime)
-						if current.next == nil then return end -- kill this thread if there was no `first` before `resolve`
 					end
 				end)
 			else -- first is non-nil
@@ -1286,6 +1291,10 @@ function Promise.prototype:_finalize()
 		-- they should use :andThen or :catch explicitly.
 		coroutine.wrap(callback)(self._status)
 	end
+
+	self._queuedFinally = nil
+	self._queuedReject = nil
+	self._queuedResolve = nil
 
 	-- Clear references to other Promises to allow gc
 	if not Promise.TEST then
